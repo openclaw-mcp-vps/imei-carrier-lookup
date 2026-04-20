@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --background: #0d1117;
+  --foreground: #e6edf3;
+  --muted: #9aa4b2;
+  --card: #161b22;
+  --border: #30363d;
+  --accent: #58a6ff;
+  --accent-soft: #1f6feb;
+  --good: #3fb950;
+  --warn: #d29922;
+  --bad: #f85149;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html,
+body {
+  min-height: 100%;
+  background: radial-gradient(circle at 15% 10%, #1f2a38 0%, transparent 32%),
+    radial-gradient(circle at 85% 0%, #1a2f4f 0%, transparent 30%),
+    linear-gradient(180deg, #0d1117 0%, #0d1117 100%);
+  color: var(--foreground);
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+}
+
+a {
+  color: inherit;
+}
