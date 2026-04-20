@@ -1,133 +1,132 @@
-import axios from "axios";
+const PUBLIC_TAC_DB_CSV_URL =
+  "https://raw.githubusercontent.com/VTSTech/IMEIDB/master/imeidb.csv";
 
-export type ImeiLookupResult = {
-  imei: string;
-  model: string;
-  manufacturer: string;
-  deviceType: string;
-  carrier: string;
-  simLockStatus: "Locked" | "Unlocked" | "Unknown";
-  unlockPolicy: string;
-  fraudRiskScore: number;
-  fraudRiskLevel: "Low" | "Medium" | "High";
-  fraudSignals: string[];
-  confidence: "High" | "Medium" | "Low";
-  source: "live" | "local";
-  tac: string;
-};
+type Confidence = "high" | "medium" | "low";
+type RiskLevel = "low" | "medium" | "high";
 
 type TacRecord = {
   manufacturer: string;
   model: string;
-  deviceType: string;
-  likelyCarrier?: string;
-  likelyLockStatus?: "Locked" | "Unlocked";
-  releaseYear?: number;
 };
 
-const TAC_DATABASE: Record<string, TacRecord> = {
-  "35693803": {
-    manufacturer: "Apple",
-    model: "iPhone 15 Pro",
-    deviceType: "Smartphone",
-    likelyCarrier: "Factory Unlocked",
-    likelyLockStatus: "Unlocked",
-    releaseYear: 2023
+export type ImeiLookupResult = {
+  imei: string;
+  tac: string;
+  checkedAt: string;
+  source: string;
+  device: {
+    manufacturer: string;
+    model: string;
+    confidence: Confidence;
+    tacMatched: boolean;
+  };
+  carrier: {
+    name: string;
+    confidence: Confidence;
+  };
+  simLockStatus: string;
+  unlockPolicy: {
+    summary: string;
+    requirements: string[];
+    source: string;
+  };
+  fraudRisk: {
+    score: number;
+    level: RiskLevel;
+    reasons: string[];
+  };
+  recommendations: string[];
+};
+
+const FALLBACK_TACS: Record<string, TacRecord> = {
+  "35722306": {
+    manufacturer: "Samsung",
+    model: "Galaxy Note 4 Edge (SM-N915W8)"
   },
   "35391505": {
     manufacturer: "Apple",
-    model: "iPhone 14",
-    deviceType: "Smartphone",
-    likelyCarrier: "Factory Unlocked",
-    likelyLockStatus: "Unlocked",
-    releaseYear: 2022
+    model: "iPhone 6s"
   },
-  "35025211": {
+  "35209910": {
     manufacturer: "Apple",
-    model: "iPhone 13",
-    deviceType: "Smartphone",
-    likelyCarrier: "AT&T",
-    likelyLockStatus: "Locked",
-    releaseYear: 2021
-  },
-  "35451814": {
-    manufacturer: "Apple",
-    model: "iPhone 12",
-    deviceType: "Smartphone",
-    likelyCarrier: "Verizon",
-    likelyLockStatus: "Unlocked",
-    releaseYear: 2020
-  },
-  "35120950": {
-    manufacturer: "Samsung",
-    model: "Galaxy S24",
-    deviceType: "Smartphone",
-    likelyCarrier: "T-Mobile",
-    likelyLockStatus: "Locked",
-    releaseYear: 2024
-  },
-  "35963510": {
-    manufacturer: "Samsung",
-    model: "Galaxy S23",
-    deviceType: "Smartphone",
-    likelyCarrier: "Factory Unlocked",
-    likelyLockStatus: "Unlocked",
-    releaseYear: 2023
-  },
-  "35726517": {
-    manufacturer: "Google",
-    model: "Pixel 8",
-    deviceType: "Smartphone",
-    likelyCarrier: "Google Fi",
-    likelyLockStatus: "Unlocked",
-    releaseYear: 2023
-  },
-  "35503127": {
-    manufacturer: "Google",
-    model: "Pixel 7",
-    deviceType: "Smartphone",
-    likelyCarrier: "Google Fi",
-    likelyLockStatus: "Unlocked",
-    releaseYear: 2022
-  },
-  "86351306": {
-    manufacturer: "Motorola",
-    model: "Moto G Power",
-    deviceType: "Smartphone",
-    likelyCarrier: "Boost Mobile",
-    likelyLockStatus: "Locked",
-    releaseYear: 2021
-  },
-  "86150905": {
-    manufacturer: "OnePlus",
-    model: "OnePlus 11",
-    deviceType: "Smartphone",
-    likelyCarrier: "Factory Unlocked",
-    likelyLockStatus: "Unlocked",
-    releaseYear: 2023
+    model: "iPhone 11"
   }
 };
 
-const CARRIER_UNLOCK_POLICIES: Record<string, string> = {
-  "AT&T":
-    "AT&T unlocks eligible devices that are fully paid off, not reported lost/stolen, and active on the account for required periods.",
-  "T-Mobile":
-    "T-Mobile generally requires the device to be paid off, in good standing, and active on the network before permanent unlock approval.",
-  Verizon:
-    "Verizon devices are usually locked for the first 60 days after purchase/activation, then unlock automatically when policy conditions are met.",
-  "Google Fi": "Google Fi and Pixel devices are typically sold unlocked unless financed under specific partner terms.",
-  "Boost Mobile":
-    "Boost Mobile often requires a defined continuous service window and account good standing before device unlock eligibility.",
-  "Factory Unlocked": "Factory unlocked devices are not tied to a carrier lock and can be used with compatible SIMs."
+const CARRIER_POLICIES: Record<
+  string,
+  { summary: string; requirements: string[]; source: string }
+> = {
+  Verizon: {
+    summary:
+      "Most Verizon consumer devices sold in the US auto-unlock after a short lock window when fraud checks pass.",
+    requirements: [
+      "Device must not be reported as lost, stolen, or fraud-flagged.",
+      "A short initial lock window can apply after purchase.",
+      "Business and deployed fleet lines can have different rules."
+    ],
+    source: "https://www.verizon.com/about/consumer-safety/device-unlocking-policy"
+  },
+  "AT&T": {
+    summary:
+      "AT&T unlocks paid-off devices that have been active long enough and are not tied to fraud or overdue balances.",
+    requirements: [
+      "Installment plans must be fully paid.",
+      "Device cannot be tied to fraud, theft, or unpaid balances.",
+      "Account holder must meet AT&T unlock eligibility requirements."
+    ],
+    source: "https://www.att.com/deviceunlock/"
+  },
+  "T-Mobile": {
+    summary:
+      "T-Mobile generally unlocks eligible devices after payoff and a minimum active period on the network.",
+    requirements: [
+      "Device financing must be completed.",
+      "Account must be in good standing.",
+      "Device must not be blocked by fraud or loss reports."
+    ],
+    source: "https://www.t-mobile.com/support/devices/unlock-your-mobile-wireless-device"
+  },
+  "Factory Unlocked": {
+    summary:
+      "Factory-unlocked devices are typically free to use on any compatible carrier.",
+    requirements: [
+      "Verify blacklist status before purchase.",
+      "Check US band compatibility for your destination carrier.",
+      "Confirm no MDM or enterprise lock is present."
+    ],
+    source: "https://www.fcc.gov/consumers/guides/cell-phone-unlocking-faqs"
+  },
+  Unknown: {
+    summary:
+      "Carrier lock status is unclear from TAC data alone; verify directly with the seller or carrier before buying.",
+    requirements: [
+      "Request proof of payoff and unlock approval.",
+      "Test with your own SIM or eSIM trial before final payment.",
+      "Check blacklist status with the target carrier."
+    ],
+    source: "https://www.fcc.gov/consumers/guides/cell-phone-unlocking-faqs"
+  }
 };
 
-function luhnCheck(imei: string) {
+let tacDatabasePromise: Promise<Map<string, TacRecord>> | null = null;
+
+function normalizeImei(imei: string): string {
+  return imei.replace(/\D/g, "").trim();
+}
+
+function luhnIsValid(value: string): boolean {
+  if (!/^\d{15}$/.test(value)) {
+    return false;
+  }
+
   let sum = 0;
+  let shouldDouble = false;
 
-  for (let i = 0; i < imei.length; i += 1) {
-    let digit = Number.parseInt(imei[i] ?? "0", 10);
+  for (let i = value.length - 1; i >= 0; i -= 1) {
+    let digit = Number(value[i]);
 
-    if ((i + 1) % 2 === 0) {
+    if (shouldDouble) {
       digit *= 2;
       if (digit > 9) {
         digit -= 9;
@@ -135,186 +134,286 @@ function luhnCheck(imei: string) {
     }
 
     sum += digit;
+    shouldDouble = !shouldDouble;
   }
 
   return sum % 10 === 0;
 }
 
-function normalizeCarrier(carrier: string | undefined) {
-  if (!carrier) {
-    return "Unknown";
-  }
-
-  if (carrier.toLowerCase().includes("att")) {
-    return "AT&T";
-  }
-  if (carrier.toLowerCase().includes("verizon")) {
-    return "Verizon";
-  }
-  if (carrier.toLowerCase().includes("t-mobile")) {
-    return "T-Mobile";
-  }
-
-  return carrier;
+function cleanManufacturer(raw: string): string {
+  return raw
+    .replace(/\b(CO|CORP|CORPORATION|LTD|LIMITED|INC|LLC|ELECTRONICS|COMMUNICATIONS)\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-async function fetchLiveCarrierData(imei: string) {
-  const endpoint = process.env.IMEI_PROVIDER_URL;
-  if (!endpoint) {
-    return null;
+async function loadTacDatabase(): Promise<Map<string, TacRecord>> {
+  if (tacDatabasePromise) {
+    return tacDatabasePromise;
   }
 
-  try {
-    const response = await axios.get(endpoint, {
-      timeout: 10000,
-      params: { imei },
-      headers: {
-        ...(process.env.IMEI_PROVIDER_API_KEY
-          ? {
-              Authorization: `Bearer ${process.env.IMEI_PROVIDER_API_KEY}`
-            }
-          : {})
+  tacDatabasePromise = (async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4500);
+
+    try {
+      const response = await fetch(PUBLIC_TAC_DB_CSV_URL, {
+        signal: controller.signal,
+        next: { revalidate: 60 * 60 * 24 }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Unable to load TAC DB: ${response.status}`);
       }
-    });
 
-    const data = response.data as Record<string, unknown>;
+      const csv = await response.text();
+      const map = new Map<string, TacRecord>();
 
+      for (const line of csv.split(/\r?\n/)) {
+        if (!line || !/^\d{8},/.test(line)) {
+          continue;
+        }
+
+        const parts = line.split(",");
+        const tac = parts[0]?.trim();
+        const manufacturer = parts[1]?.trim();
+        const model = parts[2]?.trim();
+
+        if (!tac || !manufacturer || !model) {
+          continue;
+        }
+
+        map.set(tac, {
+          manufacturer: cleanManufacturer(manufacturer),
+          model
+        });
+      }
+
+      return map;
+    } catch {
+      return new Map<string, TacRecord>();
+    } finally {
+      clearTimeout(timeout);
+    }
+  })();
+
+  return tacDatabasePromise;
+}
+
+async function resolveTac(tac: string): Promise<{ record: TacRecord | null; source: string }> {
+  const tacDb = await loadTacDatabase();
+  const record = tacDb.get(tac);
+
+  if (record) {
     return {
-      model:
-        (data.model as string | undefined) ||
-        ((data.device as Record<string, unknown> | undefined)?.model as string | undefined),
-      manufacturer:
-        (data.manufacturer as string | undefined) ||
-        ((data.device as Record<string, unknown> | undefined)?.brand as string | undefined),
-      carrier:
-        (data.carrier as string | undefined) ||
-        ((data.network as Record<string, unknown> | undefined)?.carrier as string | undefined),
-      simLockStatus:
-        ((data.simLockStatus as string | undefined) || (data.lock_status as string | undefined)) ?? undefined,
-      blacklisted:
-        (data.blacklisted as boolean | undefined) ||
-        ((data.fraud as Record<string, unknown> | undefined)?.blacklisted as boolean | undefined)
+      record,
+      source: "VTSTech IMEIDB via GitHub"
     };
-  } catch {
-    return null;
   }
+
+  if (FALLBACK_TACS[tac]) {
+    return {
+      record: FALLBACK_TACS[tac],
+      source: "Curated fallback TAC dictionary"
+    };
+  }
+
+  return {
+    record: null,
+    source: "Heuristic inference"
+  };
 }
 
-function calculateFraudSignals(input: {
+function inferCarrier(manufacturer: string, model: string): {
+  name: string;
+  confidence: Confidence;
+} {
+  const fingerprint = `${manufacturer} ${model}`.toUpperCase();
+
+  if (/\b(VZW|VERIZON|US VERSIONS? V)\b/.test(fingerprint)) {
+    return { name: "Verizon", confidence: "high" };
+  }
+
+  if (/\b(AT&T|ATT|AIO|CRICKET)\b/.test(fingerprint)) {
+    return { name: "AT&T", confidence: "medium" };
+  }
+
+  if (/\b(TMO|T-MOBILE|METRO PCS|METROPCS|TMOBILE)\b/.test(fingerprint)) {
+    return { name: "T-Mobile", confidence: "medium" };
+  }
+
+  if (/\b(U1|FACTORY UNLOCK|SIM FREE|UNLOCKED)\b/.test(fingerprint)) {
+    return { name: "Factory Unlocked", confidence: "high" };
+  }
+
+  if (/APPLE|GOOGLE PIXEL|MOTOROLA|ONEPLUS|NOTHING/.test(fingerprint)) {
+    return { name: "Factory Unlocked", confidence: "medium" };
+  }
+
+  return { name: "Unknown", confidence: "low" };
+}
+
+function inferSimLockStatus(carrier: string, carrierConfidence: Confidence): string {
+  if (carrier === "Factory Unlocked") {
+    return "Likely unlocked for compatible carriers.";
+  }
+
+  if (carrier === "Unknown") {
+    return "Unknown. Ask for carrier unlock proof before buying.";
+  }
+
+  if (carrierConfidence === "high") {
+    return `Likely locked to ${carrier} until the original account obligations are cleared.`;
+  }
+
+  return `Possibly locked to ${carrier}. Verify unlock eligibility with the original carrier.`;
+}
+
+function calculateFraudRisk(input: {
   imei: string;
-  tacRecord?: TacRecord;
-  simLockStatus: "Locked" | "Unlocked" | "Unknown";
-  blacklisted?: boolean;
-}) {
-  const nowYear = new Date().getUTCFullYear();
-  let score = 12;
-  const signals: string[] = [];
+  tacMatched: boolean;
+  carrierConfidence: Confidence;
+  model: string;
+}): { score: number; level: RiskLevel; reasons: string[] } {
+  const reasons: string[] = [];
+  let score = 18;
 
-  if (!luhnCheck(input.imei)) {
-    score += 55;
-    signals.push("IMEI failed checksum validation.");
+  if (!input.tacMatched) {
+    score += 28;
+    reasons.push("TAC was not found in the external device database.");
   }
 
-  if (!input.tacRecord) {
-    score += 18;
-    signals.push("TAC not recognized in local model library.");
+  if (input.carrierConfidence === "low") {
+    score += 14;
+    reasons.push("Carrier attribution is weak from available metadata.");
   }
 
-  if (input.tacRecord?.releaseYear && nowYear - input.tacRecord.releaseYear >= 6) {
-    score += 8;
-    signals.push("Device generation is old enough to warrant battery/parts verification.");
+  if (input.carrierConfidence === "medium") {
+    score += 6;
+    reasons.push("Carrier estimate is plausible but not definitive.");
   }
 
-  if (input.simLockStatus === "Locked") {
+  if (/UNKNOWN|GENERIC|TEST/i.test(input.model)) {
+    score += 15;
+    reasons.push("Model metadata is generic, which raises resale risk.");
+  }
+
+  const serialBlock = input.imei.slice(8, 14);
+  if (/^(\d)\1+$/.test(serialBlock)) {
+    score += 16;
+    reasons.push("Serial section has repetitive digits, common in bad IMEI lists.");
+  }
+
+  if (new Set(serialBlock).size <= 2) {
     score += 10;
-    signals.push("Carrier lock present; verify unlock eligibility before resale.");
+    reasons.push("Serial section has low entropy.");
   }
 
-  if (input.blacklisted) {
-    score += 35;
-    signals.push("Upstream provider flagged blacklist risk.");
+  score = Math.max(1, Math.min(score, 99));
+
+  let level: RiskLevel = "low";
+  if (score >= 66) {
+    level = "high";
+  } else if (score >= 36) {
+    level = "medium";
   }
 
-  if (/^(\d)\1+$/.test(input.imei)) {
-    score += 20;
-    signals.push("IMEI pattern is suspiciously repetitive.");
+  if (reasons.length === 0) {
+    reasons.push("No major structural anomalies detected from IMEI + TAC signals.");
   }
 
-  score = Math.min(100, Math.max(0, score));
-
-  let level: "Low" | "Medium" | "High" = "Low";
-  if (score >= 65) {
-    level = "High";
-  } else if (score >= 35) {
-    level = "Medium";
-  }
-
-  return { score, level, signals };
+  return { score, level, reasons };
 }
 
-function toLockStatus(status: string | undefined, fallback?: "Locked" | "Unlocked") {
-  if (!status) {
-    return fallback || "Unknown";
+function buildRecommendations(input: {
+  riskLevel: RiskLevel;
+  carrier: string;
+  tacMatched: boolean;
+}): string[] {
+  const tips: string[] = [];
+
+  if (!input.tacMatched) {
+    tips.push(
+      "Request a photo of the IMEI label in Settings and on the original box to catch mismatches."
+    );
   }
 
-  const normalized = status.toLowerCase();
-  if (normalized.includes("unlock")) {
-    return "Unlocked";
-  }
-  if (normalized.includes("lock")) {
-    return "Locked";
+  if (input.carrier !== "Factory Unlocked") {
+    tips.push(
+      "Before payment, run an unlock eligibility check with the identified carrier and confirm no unpaid installments."
+    );
   }
 
-  return fallback || "Unknown";
+  if (input.riskLevel !== "low") {
+    tips.push(
+      "Use a protected payment method and include an IMEI match clause in your bill of sale."
+    );
+  }
+
+  tips.push("Test activation with your target SIM or eSIM trial before finalizing the purchase.");
+  return tips;
 }
 
-export async function lookupImei(rawImei: string): Promise<ImeiLookupResult> {
-  const imei = rawImei.replace(/\D/g, "");
+export function validateImei(imei: string): { valid: boolean; normalized: string } {
+  const normalized = normalizeImei(imei);
+  return {
+    valid: luhnIsValid(normalized),
+    normalized
+  };
+}
 
-  if (imei.length !== 15) {
-    throw new Error("IMEI must contain exactly 15 digits.");
-  }
+export async function lookupImei(imeiInput: string): Promise<ImeiLookupResult> {
+  const { normalized: imei, valid } = validateImei(imeiInput);
 
-  if (!luhnCheck(imei)) {
-    throw new Error("IMEI checksum is invalid. Double-check for typos.");
+  if (!valid) {
+    throw new Error("Please provide a valid 15-digit IMEI.");
   }
 
   const tac = imei.slice(0, 8);
-  const tacRecord = TAC_DATABASE[tac];
-  const live = await fetchLiveCarrierData(imei);
+  const tacResolution = await resolveTac(tac);
 
-  const carrier = normalizeCarrier(live?.carrier || tacRecord?.likelyCarrier) || "Unknown";
-  const simLockStatus = toLockStatus(live?.simLockStatus, tacRecord?.likelyLockStatus);
-  const unlockPolicy =
-    CARRIER_UNLOCK_POLICIES[carrier] ||
-    "Carrier policy not matched. Confirm account standing, financing status, and theft/blacklist records with the original carrier.";
+  const device = tacResolution.record
+    ? {
+        manufacturer: tacResolution.record.manufacturer || "Unknown",
+        model: tacResolution.record.model || "Unknown",
+        confidence: "high" as Confidence,
+        tacMatched: true
+      }
+    : {
+        manufacturer: "Unknown",
+        model: "Unknown model",
+        confidence: "low" as Confidence,
+        tacMatched: false
+      };
 
-  const fraud = calculateFraudSignals({
+  const carrier = inferCarrier(device.manufacturer, device.model);
+  const simLockStatus = inferSimLockStatus(carrier.name, carrier.confidence);
+
+  const unlockPolicy = CARRIER_POLICIES[carrier.name] ?? CARRIER_POLICIES.Unknown;
+
+  const fraudRisk = calculateFraudRisk({
     imei,
-    tacRecord,
-    simLockStatus,
-    blacklisted: live?.blacklisted
+    tacMatched: device.tacMatched,
+    carrierConfidence: carrier.confidence,
+    model: device.model
   });
 
-  const confidence: "High" | "Medium" | "Low" = live
-    ? "High"
-    : tacRecord
-      ? "Medium"
-      : "Low";
+  const recommendations = buildRecommendations({
+    riskLevel: fraudRisk.level,
+    carrier: carrier.name,
+    tacMatched: device.tacMatched
+  });
 
   return {
     imei,
     tac,
-    model: live?.model || tacRecord?.model || "Unknown model",
-    manufacturer: live?.manufacturer || tacRecord?.manufacturer || "Unknown manufacturer",
-    deviceType: tacRecord?.deviceType || "Mobile Device",
+    checkedAt: new Date().toISOString(),
+    source: tacResolution.source,
+    device,
     carrier,
     simLockStatus,
     unlockPolicy,
-    fraudRiskScore: fraud.score,
-    fraudRiskLevel: fraud.level,
-    fraudSignals: fraud.signals,
-    source: live ? "live" : "local",
-    confidence
+    fraudRisk,
+    recommendations
   };
 }

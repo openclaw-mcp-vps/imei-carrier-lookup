@@ -11,21 +11,21 @@ NICHE: phone-tools
 PRICE: $$1/lookup, $15/mo unlimited/mo
 
 ARCHITECTURE SPEC:
-Next.js app with a simple form for IMEI input, serverless API routes that call third-party IMEI databases, and Lemon Squeezy integration for pay-per-lookup and subscription billing. Clean, mobile-first UI with instant results display.
+Next.js app with a simple form for IMEI input, serverless API routes that call external IMEI databases, and Lemon Squeezy integration for pay-per-lookup and subscription billing. Clean, mobile-first UI with instant results display.
 
 PLANNED FILES:
-- pages/index.js
-- pages/api/lookup.js
-- pages/api/webhooks/lemonsqueezy.js
-- components/IMEIForm.js
-- components/ResultsDisplay.js
-- components/PricingCard.js
-- lib/imei-service.js
-- lib/lemonsqueezy.js
-- lib/database.js
-- styles/globals.css
+- app/page.tsx
+- app/lookup/page.tsx
+- app/api/imei-lookup/route.ts
+- app/api/webhooks/lemonsqueezy/route.ts
+- components/imei-form.tsx
+- components/result-display.tsx
+- components/pricing-cards.tsx
+- lib/imei-service.ts
+- lib/lemonsqueezy.ts
+- lib/database.ts
 
-DEPENDENCIES: next, react, tailwindcss, @lemonsqueezy/lemonsqueezy.js, axios, prisma, @prisma/client, stripe, react-hot-toast, lucide-react
+DEPENDENCIES: next, tailwindcss, @lemonsqueezy/lemonsqueezy.js, prisma, @prisma/client, zod, react-hook-form, lucide-react
 
 REQUIREMENTS:
 - Next.js 15 with App Router (app/ directory)

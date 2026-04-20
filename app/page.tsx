@@ -1,109 +1,147 @@
-import { Suspense } from "react";
-import { Shield, Smartphone, UnlockKeyhole, Zap } from "lucide-react";
-import LookupExperience from "@/components/LookupExperience";
+import Link from "next/link";
+import {
+  ArrowRight,
+  BadgeAlert,
+  BadgeCheck,
+  CircleDollarSign,
+  KeyRound,
+  Smartphone
+} from "lucide-react";
+
+import { PricingCards } from "@/components/pricing-cards";
 
 const faqItems = [
   {
-    q: "How accurate is carrier and lock detection?",
-    a: "When a live provider is configured, results are sourced from real IMEI intelligence endpoints and carrier policy mappings. Without a live provider, model/TAC analysis still runs and confidence is shown transparently."
+    question: "Can I use this without creating an account?",
+    answer:
+      "Yes. You get one free lookup immediately. If you need more, checkout happens in a Lemon Squeezy overlay and access is unlocked on this browser session."
   },
   {
-    q: "Do I need an account for one lookup?",
-    a: "No account is required for your first lookup. After that, you can unlock more checks with a one-time purchase or the unlimited monthly plan."
+    question: "How accurate is the carrier field?",
+    answer:
+      "Carrier is an attribution estimate based on TAC and model metadata. Confidence is shown with every result so you can decide when to request extra proof from a seller."
   },
   {
-    q: "Can I use this before buying a used phone?",
-    a: "Yes. This is built for pre-purchase checks so you can spot suspicious devices, lock issues, and carrier constraints before money changes hands."
+    question: "Does this check blacklist status directly?",
+    answer:
+      "No single free source can guarantee global blacklist coverage. We compute a practical risk score and provide actionable next steps for verification before purchase."
   },
   {
-    q: "What does the risk score mean?",
-    a: "The fraud score combines IMEI validity checks, TAC confidence, lock inconsistencies, and known warning signals. It is a decision aid, not a legal determination."
+    question: "Who is this built for?",
+    answer:
+      "Used phone resellers, marketplace buyers, and anyone moving a device between carriers who wants a fast pre-purchase sanity check."
   }
 ];
 
-export default function HomePage() {
+export default function HomePage(): React.JSX.Element {
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 pb-20 pt-10 sm:px-6">
-      <section className="rounded-2xl border border-[var(--border)] bg-[color:rgba(22,27,34,0.78)] p-6 shadow-2xl shadow-black/30 sm:p-10">
-        <p className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] px-3 py-1 text-xs text-[var(--muted)]">
-          <Shield className="h-3.5 w-3.5 text-[var(--accent)]" />
-          IMEI Carrier Lookup for used-phone buyers and resellers
-        </p>
-        <h1 className="mt-5 max-w-3xl text-3xl font-semibold leading-tight tracking-tight sm:text-5xl">
-          IMEI Carrier Lookup
-          <span className="mt-2 block text-[var(--accent)]">
-            Paste IMEI, get carrier, unlock policy, and scam risk
-          </span>
-        </h1>
-        <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--muted)] sm:text-base">
-          Most IMEI tools are ad-heavy, expensive, and force signup before showing anything useful. This
-          checker keeps the flow clean: instant model and lock analysis, carrier unlock policy context, and
-          a clear risk score you can act on.
-        </p>
-        <div className="mt-6 grid gap-3 text-sm text-[var(--muted)] sm:grid-cols-3">
-          <div className="rounded-lg border border-[var(--border)] bg-[color:rgba(13,17,23,0.8)] p-4">
-            <p className="font-medium text-[var(--foreground)]">$1 per lookup</p>
-            <p className="mt-1">Pay as you go for occasional checks.</p>
-          </div>
-          <div className="rounded-lg border border-[var(--border)] bg-[color:rgba(13,17,23,0.8)] p-4">
-            <p className="font-medium text-[var(--foreground)]">$15/month unlimited</p>
-            <p className="mt-1">Designed for shops and power resellers.</p>
-          </div>
-          <div className="rounded-lg border border-[var(--border)] bg-[color:rgba(13,17,23,0.8)] p-4">
-            <p className="font-medium text-[var(--foreground)]">No signup for first lookup</p>
-            <p className="mt-1">Try it instantly, then pay only if it helps.</p>
+    <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
+      <section className="section-card relative overflow-hidden rounded-3xl p-6 sm:p-10">
+        <div className="absolute -right-10 -top-12 h-52 w-52 rounded-full bg-emerald-500/10 blur-3xl" />
+        <div className="absolute -left-14 bottom-0 h-56 w-56 rounded-full bg-cyan-400/10 blur-3xl" />
+
+        <div className="relative space-y-5">
+          <p className="inline-flex rounded-full border border-emerald-700/70 bg-emerald-900/40 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-300">
+            IMEI Carrier Lookup
+          </p>
+          <h1 className="max-w-4xl text-3xl font-bold leading-tight sm:text-5xl">
+            IMEI Carrier Lookup: paste IMEI, get carrier + unlock policy + scam risk.
+          </h1>
+          <p className="max-w-3xl text-sm leading-6 text-muted sm:text-base">
+            Existing IMEI sites push ads, force signup, and charge $5 to $15 for basic checks.
+            This tool is faster: model detection, lock guidance, and fraud risk scoring in one clean report.
+          </p>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Link
+              href="/lookup"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-black transition hover:bg-emerald-400"
+            >
+              Start Free Lookup
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <a
+              href="#pricing"
+              className="inline-flex items-center justify-center rounded-xl border border-[var(--border)] bg-[var(--bg-panel)] px-5 py-3 text-sm font-semibold text-slate-100 transition hover:border-emerald-600"
+            >
+              See Pricing
+            </a>
           </div>
         </div>
       </section>
 
-      <section className="mt-8">
-        <Suspense
-          fallback={
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-6 text-sm text-[var(--muted)]">
-              Loading lookup tool...
-            </div>
-          }
-        >
-          <LookupExperience />
-        </Suspense>
-      </section>
-
-      <section className="mt-16 grid gap-5 sm:grid-cols-3">
-        <article className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
-          <Smartphone className="h-5 w-5 text-[var(--accent)]" />
-          <h2 className="mt-3 text-lg font-semibold">Problem</h2>
-          <p className="mt-2 text-sm text-[var(--muted)]">
-            Buyers lose money on blacklisted, carrier-locked, or suspicious devices because standard checks are
-            slow, opaque, or overpriced.
+      <section className="mt-8 grid gap-4 md:grid-cols-3">
+        <article className="section-card rounded-2xl p-5">
+          <div className="mb-2 flex items-center gap-2 text-sm text-orange-300">
+            <BadgeAlert className="h-4 w-4" />
+            Problem
+          </div>
+          <p className="text-sm text-muted">
+            Buyers get burned by locked devices, unpaid installment balances, and cloned IMEIs that look fine at first glance.
           </p>
         </article>
-        <article className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
-          <UnlockKeyhole className="h-5 w-5 text-[var(--accent)]" />
-          <h2 className="mt-3 text-lg font-semibold">Solution</h2>
-          <p className="mt-2 text-sm text-[var(--muted)]">
-            One input returns the device identity, lock context, carrier unlock policy, and confidence-aware risk
-            score in a format that is easy to evaluate fast.
+        <article className="section-card rounded-2xl p-5">
+          <div className="mb-2 flex items-center gap-2 text-sm text-cyan-300">
+            <Smartphone className="h-4 w-4" />
+            Solution
+          </div>
+          <p className="text-sm text-muted">
+            We map IMEI TAC data to model metadata, estimate carrier lock context, and convert messy checks into a clear pass/fail risk profile.
           </p>
         </article>
-        <article className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
-          <Zap className="h-5 w-5 text-[var(--accent)]" />
-          <h2 className="mt-3 text-lg font-semibold">Why It Converts</h2>
-          <p className="mt-2 text-sm text-[var(--muted)]">
-            No forced registration, clear pricing, immediate value, and a mobile-first interface you can use at
-            the point of purchase.
+        <article className="section-card rounded-2xl p-5">
+          <div className="mb-2 flex items-center gap-2 text-sm text-emerald-300">
+            <CircleDollarSign className="h-4 w-4" />
+            Why It Wins
+          </div>
+          <p className="text-sm text-muted">
+            One free lookup, then pay as you go at $1 or run unlimited at $15/month. No bloated dashboard, no forced account flow.
           </p>
         </article>
       </section>
 
-      <section id="faq" className="mt-16 rounded-xl border border-[var(--border)] bg-[var(--card)] p-6">
-        <h2 className="text-2xl font-semibold tracking-tight">FAQ</h2>
-        <div className="mt-5 divide-y divide-[var(--border)]">
+      <section className="mt-10 space-y-5">
+        <h2 className="text-2xl font-bold sm:text-3xl">What each report includes</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <article className="section-card rounded-xl p-4">
+            <BadgeCheck className="mb-2 h-5 w-5 text-emerald-300" />
+            <h3 className="text-sm font-semibold">Device model match</h3>
+            <p className="mt-1 text-sm text-muted">TAC-based model and manufacturer lookup with source labeling.</p>
+          </article>
+          <article className="section-card rounded-xl p-4">
+            <KeyRound className="mb-2 h-5 w-5 text-cyan-300" />
+            <h3 className="text-sm font-semibold">Carrier + SIM lock insight</h3>
+            <p className="mt-1 text-sm text-muted">Likely carrier assignment and lock context confidence score.</p>
+          </article>
+          <article className="section-card rounded-xl p-4">
+            <CircleDollarSign className="mb-2 h-5 w-5 text-emerald-300" />
+            <h3 className="text-sm font-semibold">Unlock policy summary</h3>
+            <p className="mt-1 text-sm text-muted">Practical eligibility requirements linked to official carrier policy pages.</p>
+          </article>
+          <article className="section-card rounded-xl p-4">
+            <BadgeAlert className="mb-2 h-5 w-5 text-orange-300" />
+            <h3 className="text-sm font-semibold">Fraud risk score</h3>
+            <p className="mt-1 text-sm text-muted">Actionable risk score with reasons and a verification checklist before buying.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="pricing" className="mt-12 space-y-4">
+        <h2 className="text-2xl font-bold sm:text-3xl">Pricing</h2>
+        <p className="text-sm text-muted sm:text-base">
+          Choose what matches your workflow: occasional buyer or high-volume reseller.
+        </p>
+        <PricingCards />
+      </section>
+
+      <section className="mt-12 space-y-4">
+        <h2 className="text-2xl font-bold sm:text-3xl">FAQ</h2>
+        <div className="space-y-3">
           {faqItems.map((item) => (
-            <details key={item.q} className="group py-4">
-              <summary className="cursor-pointer list-none text-sm font-medium sm:text-base">
-                <span className="group-open:text-[var(--accent)]">{item.q}</span>
+            <details key={item.question} className="section-card rounded-xl p-4">
+              <summary className="cursor-pointer text-sm font-semibold sm:text-base">
+                {item.question}
               </summary>
-              <p className="mt-3 text-sm leading-7 text-[var(--muted)]">{item.a}</p>
+              <p className="mt-2 text-sm leading-6 text-muted">{item.answer}</p>
             </details>
           ))}
         </div>

@@ -1,75 +1,137 @@
-import crypto from "crypto";
-import type { CheckoutPlan } from "@/lib/database";
+import crypto from "node:crypto";
 
-export function getAppUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+export const SESSION_COOKIE = "imei_session";
+
+type CheckoutPlan = "single" | "subscription";
+
+type BuildCheckoutUrlParams = {
+  plan: CheckoutPlan;
+  sessionId: string;
+  email?: string;
+};
+
+export type LemonWebhookPayload = {
+  meta?: {
+    event_name?: string;
+    custom_data?: {
+      session_id?: string;
+      plan?: CheckoutPlan;
+    };
+  };
+  data?: {
+    id?: string;
+    attributes?: {
+      user_email?: string;
+      ends_at?: string | null;
+      renews_at?: string | null;
+      status?: string;
+      custom_data?: {
+        session_id?: string;
+        plan?: CheckoutPlan;
+      };
+      first_order_item?: {
+        custom_data?: {
+          session_id?: string;
+          plan?: CheckoutPlan;
+        };
+      };
+    };
+  };
+};
+
+function resolveCheckoutHandle(plan: CheckoutPlan): string | null {
+  const raw = process.env.NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_ID?.trim();
+
+  if (!raw) {
+    return null;
+  }
+
+  if (raw.includes(",")) {
+    const [single, subscription] = raw.split(",").map((entry) => entry.trim());
+    if (plan === "subscription") {
+      return subscription || single || null;
+    }
+    return single || null;
+  }
+
+  return raw;
 }
 
-export function getPlanCheckoutId(plan: CheckoutPlan) {
-  if (plan === "monthly") {
-    return (
-      process.env.NEXT_PUBLIC_LEMON_SQUEEZY_MONTHLY_PRODUCT_ID ||
-      process.env.NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_ID ||
-      ""
-    );
-  }
-  return process.env.NEXT_PUBLIC_LEMON_SQUEEZY_PRODUCT_ID || "";
-}
+export function buildCheckoutUrl({
+  plan,
+  sessionId,
+  email
+}: BuildCheckoutUrlParams): string | null {
+  const handle = resolveCheckoutHandle(plan);
 
-export function buildCheckoutUrl(input: { plan: CheckoutPlan; sessionToken: string }) {
-  const checkoutId = getPlanCheckoutId(input.plan);
-  if (!checkoutId) {
-    throw new Error("Missing Lemon Squeezy product identifier environment variable.");
+  if (!handle) {
+    return null;
   }
 
-  const url = new URL(`https://checkout.lemonsqueezy.com/buy/${checkoutId}`);
-  url.searchParams.set("checkout[custom][session_token]", input.sessionToken);
-  url.searchParams.set("checkout[custom][plan]", input.plan);
-  url.searchParams.set("checkout[success_url]", `${getAppUrl()}?checkout=success&session=${input.sessionToken}`);
-  url.searchParams.set("checkout[cancel_url]", `${getAppUrl()}?checkout=canceled`);
+  const isAbsoluteUrl = /^https?:\/\//i.test(handle);
+  const url = new URL(
+    isAbsoluteUrl ? handle : `https://checkout.lemonsqueezy.com/buy/${handle}`
+  );
+
+  url.searchParams.set("embed", "1");
+  url.searchParams.set("media", "0");
+  url.searchParams.set("logo", "0");
+  url.searchParams.set("checkout[custom][session_id]", sessionId);
+  url.searchParams.set("checkout[custom][plan]", plan);
+
+  const storeId = process.env.NEXT_PUBLIC_LEMON_SQUEEZY_STORE_ID?.trim();
+  if (storeId) {
+    url.searchParams.set("checkout[custom][store_id]", storeId);
+  }
+
+  if (email) {
+    url.searchParams.set("checkout[email]", email);
+  }
 
   return url.toString();
 }
 
-export function verifyLemonSignature(rawBody: string, signatureHeader: string | null) {
-  if (!signatureHeader) {
+export function verifyLemonWebhookSignature(
+  rawBody: string,
+  signatureHeader: string | null
+): boolean {
+  const secret = process.env.LEMON_SQUEEZY_WEBHOOK_SECRET?.trim();
+
+  if (!secret || !signatureHeader) {
     return false;
   }
 
-  const secret = process.env.LEMON_SQUEEZY_WEBHOOK_SECRET;
-  if (!secret) {
-    return false;
-  }
+  const signature = signatureHeader.includes("=")
+    ? signatureHeader.split("=").at(-1) ?? ""
+    : signatureHeader;
 
   const digest = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
-  if (digest.length !== signatureHeader.length) {
+
+  if (digest.length !== signature.length) {
     return false;
   }
-  return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(signatureHeader));
+
+  return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(signature));
 }
 
-export function extractSessionTokenFromWebhook(payload: unknown): string | null {
-  if (!payload || typeof payload !== "object") {
-    return null;
-  }
+export function extractSessionId(payload: LemonWebhookPayload): string | null {
+  return (
+    payload.meta?.custom_data?.session_id ??
+    payload.data?.attributes?.custom_data?.session_id ??
+    payload.data?.attributes?.first_order_item?.custom_data?.session_id ??
+    null
+  );
+}
 
-  const safe = payload as Record<string, unknown>;
-  const meta = safe.meta as Record<string, unknown> | undefined;
-  const customData = meta?.custom_data as Record<string, unknown> | undefined;
+export function extractPlan(payload: LemonWebhookPayload): CheckoutPlan {
+  return (
+    payload.meta?.custom_data?.plan ??
+    payload.data?.attributes?.custom_data?.plan ??
+    payload.data?.attributes?.first_order_item?.custom_data?.plan ??
+    "single"
+  );
+}
 
-  if (typeof customData?.session_token === "string") {
-    return customData.session_token;
-  }
-
-  const data = safe.data as Record<string, unknown> | undefined;
-  const attributes = data?.attributes as Record<string, unknown> | undefined;
-  const firstOrderItem = attributes?.first_order_item as Record<string, unknown> | undefined;
-  const checkoutData = firstOrderItem?.checkout_data as Record<string, unknown> | undefined;
-  const custom = checkoutData?.custom as Record<string, unknown> | undefined;
-
-  if (typeof custom?.session_token === "string") {
-    return custom.session_token;
-  }
-
-  return null;
+export function extractEventName(payload: LemonWebhookPayload): string {
+  return payload.meta?.event_name ?? "unknown";
 }

@@ -1,42 +1,49 @@
 import type { Metadata } from "next";
-import { Toaster } from "react-hot-toast";
+import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import Script from "next/script";
+
 import "./globals.css";
-import { Geist } from "next/font/google";
-import { cn } from "@/lib/utils";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-space-grotesk",
+  display: "swap"
+});
 
-const siteName = "IMEI Carrier Lookup";
-const description =
-  "Paste an IMEI and get model, carrier, lock status, unlock policy, and a practical scam-risk score in seconds.";
+const jetBrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-jetbrains-mono",
+  display: "swap"
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://imei-carrier-lookup.app"),
   title: {
-    default: `${siteName} | Fast Carrier + Unlock + Fraud Check`,
-    template: `%s | ${siteName}`
+    default: "IMEI Carrier Lookup | Carrier, Unlock Policy, and Scam Risk",
+    template: "%s | IMEI Carrier Lookup"
   },
-  description,
-  applicationName: siteName,
+  description:
+    "Paste an IMEI and instantly get model identification, likely carrier, SIM lock status, unlock policy guidance, and a practical fraud risk score.",
   keywords: [
-    "IMEI checker",
+    "IMEI check",
     "carrier lookup",
     "SIM lock status",
-    "unlock policy",
-    "phone fraud check",
-    "used phone buyer tools"
+    "phone unlock policy",
+    "used phone fraud check"
   ],
   openGraph: {
-    title: "IMEI Carrier Lookup — Carrier, Unlock Rules, Scam Risk",
-    description,
+    title: "IMEI Carrier Lookup",
+    description:
+      "Fast IMEI intelligence for used phone buyers and resellers. Model, carrier hints, unlock policy, and risk score in one report.",
     url: "https://imei-carrier-lookup.app",
-    siteName,
+    siteName: "IMEI Carrier Lookup",
     type: "website"
   },
   twitter: {
     card: "summary_large_image",
     title: "IMEI Carrier Lookup",
-    description
+    description:
+      "Paste an IMEI and get carrier, unlock policy, and scam risk in seconds."
   },
   robots: {
     index: true,
@@ -48,21 +55,20 @@ export default function RootLayout({
   children
 }: Readonly<{
   children: React.ReactNode;
-}>) {
+}>): React.JSX.Element {
   return (
-    <html lang="en" className={cn("dark", "font-sans", geist.variable)}>
-      <body className="bg-[var(--background)] text-[var(--foreground)] antialiased">
-        {children}
-        <Toaster
-          position="top-center"
-          toastOptions={{
-            style: {
-              background: "#161b22",
-              color: "#e6edf3",
-              border: "1px solid #30363d"
-            }
-          }}
+    <html lang="en" suppressHydrationWarning>
+      <body
+        className={`${spaceGrotesk.variable} ${jetBrainsMono.variable} antialiased`}
+        style={{
+          fontFamily: "var(--font-space-grotesk), ui-sans-serif, sans-serif"
+        }}
+      >
+        <Script
+          src="https://assets.lemonsqueezy.com/lemon.js"
+          strategy="afterInteractive"
         />
+        {children}
       </body>
     </html>
   );

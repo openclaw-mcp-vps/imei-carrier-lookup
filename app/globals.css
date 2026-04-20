@@ -2,35 +2,57 @@
 
 :root {
   color-scheme: dark;
-  --background: #0d1117;
-  --foreground: #e6edf3;
-  --muted: #9aa4b2;
-  --card: #161b22;
-  --border: #30363d;
-  --accent: #58a6ff;
-  --accent-soft: #1f6feb;
-  --good: #3fb950;
-  --warn: #d29922;
-  --bad: #f85149;
+  --bg: #0d1117;
+  --bg-elevated: #111827;
+  --bg-panel: #161b22;
+  --border: #2d333b;
+  --text-primary: #e6edf3;
+  --text-muted: #9ba7b4;
+  --accent: #22c55e;
+  --accent-2: #06b6d4;
+  --danger: #f97316;
 }
 
 * {
-  border-color: var(--border);
+  box-sizing: border-box;
 }
 
 html,
 body {
   min-height: 100%;
-  background: radial-gradient(circle at 15% 10%, #1f2a38 0%, transparent 32%),
-    radial-gradient(circle at 85% 0%, #1a2f4f 0%, transparent 30%),
-    linear-gradient(180deg, #0d1117 0%, #0d1117 100%);
-  color: var(--foreground);
 }
 
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+  background:
+    radial-gradient(1200px 500px at 85% -5%, rgba(34, 197, 94, 0.14), transparent 60%),
+    radial-gradient(900px 440px at -5% 15%, rgba(6, 182, 212, 0.14), transparent 64%),
+    var(--bg);
+  color: var(--text-primary);
 }
 
 a {
   color: inherit;
+  text-decoration: none;
+}
+
+.section-card {
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(22, 27, 34, 0.95), rgba(22, 27, 34, 0.78));
+  backdrop-filter: blur(8px);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+.risk-low {
+  color: #22c55e;
+}
+
+.risk-medium {
+  color: #f59e0b;
+}
+
+.risk-high {
+  color: #f97316;
 }
