@@ -1,132 +1,70 @@
-const PUBLIC_TAC_DB_CSV_URL =
-  "https://raw.githubusercontent.com/VTSTech/IMEIDB/master/imeidb.csv";
+import axios from "axios";
 
-type Confidence = "high" | "medium" | "low";
-type RiskLevel = "low" | "medium" | "high";
+import { getUnlockPolicyForCarrier } from "@/lib/carrier-policies";
+import {
+  CarrierConfidence,
+  FraudRiskLevel,
+  ImeiLookupResult,
+  LookupSource,
+  SimLockStatus,
+} from "@/lib/types";
 
-type TacRecord = {
-  manufacturer: string;
-  model: string;
-};
-
-export type ImeiLookupResult = {
-  imei: string;
-  tac: string;
-  checkedAt: string;
-  source: string;
-  device: {
-    manufacturer: string;
-    model: string;
-    confidence: Confidence;
-    tacMatched: boolean;
-  };
-  carrier: {
-    name: string;
-    confidence: Confidence;
-  };
-  simLockStatus: string;
-  unlockPolicy: {
-    summary: string;
-    requirements: string[];
-    source: string;
-  };
-  fraudRisk: {
-    score: number;
-    level: RiskLevel;
-    reasons: string[];
-  };
-  recommendations: string[];
-};
-
-const FALLBACK_TACS: Record<string, TacRecord> = {
-  "35722306": {
-    manufacturer: "Samsung",
-    model: "Galaxy Note 4 Edge (SM-N915W8)"
-  },
-  "35391505": {
-    manufacturer: "Apple",
-    model: "iPhone 6s"
-  },
-  "35209910": {
-    manufacturer: "Apple",
-    model: "iPhone 11"
-  }
-};
-
-const CARRIER_POLICIES: Record<
-  string,
-  { summary: string; requirements: string[]; source: string }
-> = {
-  Verizon: {
-    summary:
-      "Most Verizon consumer devices sold in the US auto-unlock after a short lock window when fraud checks pass.",
-    requirements: [
-      "Device must not be reported as lost, stolen, or fraud-flagged.",
-      "A short initial lock window can apply after purchase.",
-      "Business and deployed fleet lines can have different rules."
-    ],
-    source: "https://www.verizon.com/about/consumer-safety/device-unlocking-policy"
-  },
-  "AT&T": {
-    summary:
-      "AT&T unlocks paid-off devices that have been active long enough and are not tied to fraud or overdue balances.",
-    requirements: [
-      "Installment plans must be fully paid.",
-      "Device cannot be tied to fraud, theft, or unpaid balances.",
-      "Account holder must meet AT&T unlock eligibility requirements."
-    ],
-    source: "https://www.att.com/deviceunlock/"
-  },
-  "T-Mobile": {
-    summary:
-      "T-Mobile generally unlocks eligible devices after payoff and a minimum active period on the network.",
-    requirements: [
-      "Device financing must be completed.",
-      "Account must be in good standing.",
-      "Device must not be blocked by fraud or loss reports."
-    ],
-    source: "https://www.t-mobile.com/support/devices/unlock-your-mobile-wireless-device"
-  },
-  "Factory Unlocked": {
-    summary:
-      "Factory-unlocked devices are typically free to use on any compatible carrier.",
-    requirements: [
-      "Verify blacklist status before purchase.",
-      "Check US band compatibility for your destination carrier.",
-      "Confirm no MDM or enterprise lock is present."
-    ],
-    source: "https://www.fcc.gov/consumers/guides/cell-phone-unlocking-faqs"
-  },
-  Unknown: {
-    summary:
-      "Carrier lock status is unclear from TAC data alone; verify directly with the seller or carrier before buying.",
-    requirements: [
-      "Request proof of payoff and unlock approval.",
-      "Test with your own SIM or eSIM trial before final payment.",
-      "Check blacklist status with the target carrier."
-    ],
-    source: "https://www.fcc.gov/consumers/guides/cell-phone-unlocking-faqs"
-  }
-};
-
-let tacDatabasePromise: Promise<Map<string, TacRecord>> | null = null;
-
-function normalizeImei(imei: string): string {
-  return imei.replace(/\D/g, "").trim();
+interface ProviderDeviceData {
+  source: LookupSource;
+  brand: string | null;
+  model: string | null;
+  marketingName: string | null;
+  carrier: string | null;
+  simLockStatus: SimLockStatus;
+  blacklisted: boolean | null;
 }
 
-function luhnIsValid(value: string): boolean {
-  if (!/^\d{15}$/.test(value)) {
-    return false;
-  }
+interface TacFallback {
+  brand: string;
+  model: string;
+  marketingName: string;
+  carrier?: string;
+  simLockStatus?: SimLockStatus;
+}
 
+const TAC_FALLBACKS: Record<string, TacFallback> = {
+  "49015420": {
+    brand: "3GPP Test",
+    model: "Reference IMEI",
+    marketingName: "GSMA test identifier",
+    simLockStatus: "unknown",
+  },
+  "35391805": {
+    brand: "Apple",
+    model: "A2484",
+    marketingName: "iPhone 13 (regional variant)",
+    simLockStatus: "unknown",
+  },
+  "35175605": {
+    brand: "Samsung",
+    model: "SM-G998",
+    marketingName: "Galaxy S21 Ultra",
+    simLockStatus: "unknown",
+  },
+  "35702210": {
+    brand: "Google",
+    model: "GD1YQ",
+    marketingName: "Pixel 5",
+    simLockStatus: "unknown",
+  },
+};
+
+function sanitizeImei(input: string): string {
+  return input.replace(/\D/g, "");
+}
+
+function luhnCheck(imei: string): boolean {
   let sum = 0;
-  let shouldDouble = false;
 
-  for (let i = value.length - 1; i >= 0; i -= 1) {
-    let digit = Number(value[i]);
+  for (let i = 0; i < imei.length; i += 1) {
+    let digit = Number.parseInt(imei[i], 10);
 
-    if (shouldDouble) {
+    if ((i + 1) % 2 === 0) {
       digit *= 2;
       if (digit > 9) {
         digit -= 9;
@@ -134,286 +72,408 @@ function luhnIsValid(value: string): boolean {
     }
 
     sum += digit;
-    shouldDouble = !shouldDouble;
   }
 
   return sum % 10 === 0;
 }
 
-function cleanManufacturer(raw: string): string {
-  return raw
-    .replace(/\b(CO|CORP|CORPORATION|LTD|LIMITED|INC|LLC|ELECTRONICS|COMMUNICATIONS)\b/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-async function loadTacDatabase(): Promise<Map<string, TacRecord>> {
-  if (tacDatabasePromise) {
-    return tacDatabasePromise;
+function pickString(source: Record<string, unknown> | null, keys: string[]): string | null {
+  if (!source) {
+    return null;
   }
 
-  tacDatabasePromise = (async () => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4500);
+  for (const key of keys) {
+    const value = source[key];
 
-    try {
-      const response = await fetch(PUBLIC_TAC_DB_CSV_URL, {
-        signal: controller.signal,
-        next: { revalidate: 60 * 60 * 24 }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Unable to load TAC DB: ${response.status}`);
-      }
-
-      const csv = await response.text();
-      const map = new Map<string, TacRecord>();
-
-      for (const line of csv.split(/\r?\n/)) {
-        if (!line || !/^\d{8},/.test(line)) {
-          continue;
-        }
-
-        const parts = line.split(",");
-        const tac = parts[0]?.trim();
-        const manufacturer = parts[1]?.trim();
-        const model = parts[2]?.trim();
-
-        if (!tac || !manufacturer || !model) {
-          continue;
-        }
-
-        map.set(tac, {
-          manufacturer: cleanManufacturer(manufacturer),
-          model
-        });
-      }
-
-      return map;
-    } catch {
-      return new Map<string, TacRecord>();
-    } finally {
-      clearTimeout(timeout);
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim();
     }
-  })();
-
-  return tacDatabasePromise;
-}
-
-async function resolveTac(tac: string): Promise<{ record: TacRecord | null; source: string }> {
-  const tacDb = await loadTacDatabase();
-  const record = tacDb.get(tac);
-
-  if (record) {
-    return {
-      record,
-      source: "VTSTech IMEIDB via GitHub"
-    };
   }
 
-  if (FALLBACK_TACS[tac]) {
+  return null;
+}
+
+function normalizeLockStatus(value: string | null): SimLockStatus {
+  if (!value) {
+    return "unknown";
+  }
+
+  const normalized = value.toLowerCase();
+
+  if (normalized.includes("unlock") || normalized === "open") {
+    return "unlocked";
+  }
+
+  if (normalized.includes("lock") || normalized.includes("sim restricted")) {
+    return "locked";
+  }
+
+  return "unknown";
+}
+
+function parseBoolean(input: unknown): boolean | null {
+  if (typeof input === "boolean") {
+    return input;
+  }
+
+  if (typeof input === "string") {
+    const value = input.toLowerCase().trim();
+
+    if (["true", "yes", "y", "1", "blacklisted", "blocked"].includes(value)) {
+      return true;
+    }
+
+    if (["false", "no", "n", "0", "clean", "not blacklisted"].includes(value)) {
+      return false;
+    }
+  }
+
+  return null;
+}
+
+function parseProviderPayload(raw: unknown, source: LookupSource): ProviderDeviceData | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  const asRecord = raw as Record<string, unknown>;
+  const nestedData = (typeof asRecord.data === "object" ? asRecord.data : null) as Record<string, unknown> | null;
+
+  const brand =
+    pickString(asRecord, ["brand", "manufacturer", "maker", "vendor"]) ||
+    pickString(nestedData, ["brand", "manufacturer", "maker", "vendor"]);
+  const model =
+    pickString(asRecord, ["model", "model_name", "device_model", "device"])
+    || pickString(nestedData, ["model", "model_name", "device_model", "device"]);
+  const marketingName =
+    pickString(asRecord, ["name", "marketing_name", "device_name"]) ||
+    pickString(nestedData, ["name", "marketing_name", "device_name"]);
+
+  const carrier =
+    pickString(asRecord, ["carrier", "operator", "network", "network_operator"]) ||
+    pickString(nestedData, ["carrier", "operator", "network", "network_operator"]);
+
+  const lockStatusRaw =
+    pickString(asRecord, ["sim_lock", "simlock", "lock_status", "sim_lock_status"]) ||
+    pickString(nestedData, ["sim_lock", "simlock", "lock_status", "sim_lock_status"]);
+
+  const blacklisted =
+    parseBoolean(asRecord.blacklisted) ??
+    parseBoolean(asRecord.blacklist_status) ??
+    parseBoolean(nestedData?.blacklisted) ??
+    parseBoolean(nestedData?.blacklist_status);
+
+  if (!brand && !model && !marketingName) {
+    return null;
+  }
+
+  return {
+    source,
+    brand,
+    model,
+    marketingName,
+    carrier,
+    simLockStatus: normalizeLockStatus(lockStatusRaw),
+    blacklisted,
+  };
+}
+
+async function fetchHiCellTekData(imei: string): Promise<ProviderDeviceData | null> {
+  const key = process.env.HICELLTEK_API_KEY;
+
+  if (!key) {
+    return null;
+  }
+
+  try {
+    const response = await axios.post(
+      "https://imei.hicelltek.com/api/v1/tac/lookup",
+      { q: imei },
+      {
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          "User-Agent": "imei-carrier-lookup/1.0",
+        },
+        timeout: 5000,
+        validateStatus: (status) => status >= 200 && status < 500,
+      },
+    );
+
+    if (response.status >= 400) {
+      return null;
+    }
+
+    return parseProviderPayload(response.data, "hicelltek");
+  } catch {
+    return null;
+  }
+}
+
+async function fetchDeviceCheckData(imei: string): Promise<ProviderDeviceData | null> {
+  const token = process.env.DEVICECHECK_API_TOKEN;
+
+  if (!token) {
+    return null;
+  }
+
+  try {
+    const response = await axios.post(
+      process.env.DEVICECHECK_API_URL || "https://devicecheck.us/api/v2/checkimei",
+      {
+        token,
+        service: "tac_data",
+        imei,
+      },
+      {
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "User-Agent": "imei-carrier-lookup/1.0",
+        },
+        timeout: 5000,
+        validateStatus: (status) => status >= 200 && status < 500,
+      },
+    );
+
+    if (response.status >= 400) {
+      return null;
+    }
+
+    return parseProviderPayload(response.data, "devicecheck");
+  } catch {
+    return null;
+  }
+}
+
+function tacFallback(tac: string): ProviderDeviceData {
+  const fallback = TAC_FALLBACKS[tac];
+
+  if (!fallback) {
     return {
-      record: FALLBACK_TACS[tac],
-      source: "Curated fallback TAC dictionary"
+      source: "local",
+      brand: null,
+      model: null,
+      marketingName: null,
+      carrier: null,
+      simLockStatus: "unknown",
+      blacklisted: null,
     };
   }
 
   return {
-    record: null,
-    source: "Heuristic inference"
+    source: "local",
+    brand: fallback.brand,
+    model: fallback.model,
+    marketingName: fallback.marketingName,
+    carrier: fallback.carrier ?? null,
+    simLockStatus: fallback.simLockStatus ?? "unknown",
+    blacklisted: null,
   };
 }
 
-function inferCarrier(manufacturer: string, model: string): {
+function inferCarrier(inputCarrier: string | null, brand: string, model: string): {
   name: string;
-  confidence: Confidence;
+  confidence: CarrierConfidence;
+  reason: string;
 } {
-  const fingerprint = `${manufacturer} ${model}`.toUpperCase();
+  const source = (inputCarrier || `${brand} ${model}`).toLowerCase();
 
-  if (/\b(VZW|VERIZON|US VERSIONS? V)\b/.test(fingerprint)) {
-    return { name: "Verizon", confidence: "high" };
+  const candidateMap: Array<{ name: string; match: string[]; confidence: CarrierConfidence; reason: string }> = [
+    {
+      name: "Verizon",
+      match: ["verizon", "vzw"],
+      confidence: "high",
+      reason: "Carrier marker matched Verizon identifiers.",
+    },
+    {
+      name: "AT&T",
+      match: ["at&t", "att", "cricket"],
+      confidence: "high",
+      reason: "Carrier marker matched AT&T family identifiers.",
+    },
+    {
+      name: "T-Mobile",
+      match: ["t-mobile", "tmobile", "metro", "mint"],
+      confidence: "high",
+      reason: "Carrier marker matched T-Mobile family identifiers.",
+    },
+    {
+      name: "Boost Mobile",
+      match: ["boost"],
+      confidence: "medium",
+      reason: "Carrier marker matched Boost-specific keywords.",
+    },
+  ];
+
+  for (const candidate of candidateMap) {
+    if (candidate.match.some((keyword) => source.includes(keyword))) {
+      return {
+        name: candidate.name,
+        confidence: candidate.confidence,
+        reason: candidate.reason,
+      };
+    }
   }
 
-  if (/\b(AT&T|ATT|AIO|CRICKET)\b/.test(fingerprint)) {
-    return { name: "AT&T", confidence: "medium" };
-  }
-
-  if (/\b(TMO|T-MOBILE|METRO PCS|METROPCS|TMOBILE)\b/.test(fingerprint)) {
-    return { name: "T-Mobile", confidence: "medium" };
-  }
-
-  if (/\b(U1|FACTORY UNLOCK|SIM FREE|UNLOCKED)\b/.test(fingerprint)) {
-    return { name: "Factory Unlocked", confidence: "high" };
-  }
-
-  if (/APPLE|GOOGLE PIXEL|MOTOROLA|ONEPLUS|NOTHING/.test(fingerprint)) {
-    return { name: "Factory Unlocked", confidence: "medium" };
-  }
-
-  return { name: "Unknown", confidence: "low" };
+  return {
+    name: "Unspecified (likely open-market)",
+    confidence: "low",
+    reason: "IMEI alone does not encode active carrier for most devices.",
+  };
 }
 
-function inferSimLockStatus(carrier: string, carrierConfidence: Confidence): string {
-  if (carrier === "Factory Unlocked") {
-    return "Likely unlocked for compatible carriers.";
-  }
-
-  if (carrier === "Unknown") {
-    return "Unknown. Ask for carrier unlock proof before buying.";
-  }
-
-  if (carrierConfidence === "high") {
-    return `Likely locked to ${carrier} until the original account obligations are cleared.`;
-  }
-
-  return `Possibly locked to ${carrier}. Verify unlock eligibility with the original carrier.`;
-}
-
-function calculateFraudRisk(input: {
+function getFraudSignals(input: {
   imei: string;
-  tacMatched: boolean;
-  carrierConfidence: Confidence;
-  model: string;
-}): { score: number; level: RiskLevel; reasons: string[] } {
-  const reasons: string[] = [];
-  let score = 18;
+  isValid: boolean;
+  source: LookupSource;
+  modelKnown: boolean;
+  blacklisted: boolean | null;
+  simLockStatus: SimLockStatus;
+  carrierConfidence: CarrierConfidence;
+}): { score: number; level: FraudRiskLevel; signals: string[] } {
+  if (!input.isValid) {
+    return {
+      score: 95,
+      level: "high",
+      signals: [
+        "IMEI failed Luhn checksum validation.",
+        "Invalid IMEI format is a common fraud indicator in used-phone listings.",
+      ],
+    };
+  }
 
-  if (!input.tacMatched) {
-    score += 28;
-    reasons.push("TAC was not found in the external device database.");
+  let score = 34;
+  const signals: string[] = [];
+
+  if (input.modelKnown) {
+    score -= 12;
+    signals.push("Device model resolved from TAC or provider data.");
+  } else {
+    score += 12;
+    signals.push("TAC could not be matched to a known device model.");
+  }
+
+  if (input.source === "local") {
+    score += 9;
+    signals.push("External provider did not return full identity data.");
+  } else {
+    score -= 8;
+    signals.push("Third-party IMEI provider returned live metadata.");
+  }
+
+  if (input.blacklisted === true) {
+    score += 35;
+    signals.push("Provider flagged this IMEI as blacklisted or blocked.");
+  }
+
+  if (input.blacklisted === false) {
+    score -= 8;
+    signals.push("Provider reported a clean blacklist state.");
+  }
+
+  if (input.simLockStatus === "locked") {
+    score += 10;
+    signals.push("Device appears SIM-locked, which can complicate resale value.");
   }
 
   if (input.carrierConfidence === "low") {
-    score += 14;
-    reasons.push("Carrier attribution is weak from available metadata.");
-  }
-
-  if (input.carrierConfidence === "medium") {
     score += 6;
-    reasons.push("Carrier estimate is plausible but not definitive.");
+    signals.push("Carrier identity confidence is low.");
   }
 
-  if (/UNKNOWN|GENERIC|TEST/i.test(input.model)) {
-    score += 15;
-    reasons.push("Model metadata is generic, which raises resale risk.");
+  if (/^(\d)\1{14}$/.test(input.imei)) {
+    score += 20;
+    signals.push("IMEI has repeated digits pattern often used in fake listings.");
   }
 
-  const serialBlock = input.imei.slice(8, 14);
-  if (/^(\d)\1+$/.test(serialBlock)) {
-    score += 16;
-    reasons.push("Serial section has repetitive digits, common in bad IMEI lists.");
+  if (["123456789012345", "111111111111111", "000000000000000"].includes(input.imei)) {
+    score += 30;
+    signals.push("IMEI matches a known fake/demo pattern.");
   }
 
-  if (new Set(serialBlock).size <= 2) {
-    score += 10;
-    reasons.push("Serial section has low entropy.");
-  }
+  score = Math.min(100, Math.max(1, score));
 
-  score = Math.max(1, Math.min(score, 99));
+  let level: FraudRiskLevel = "low";
 
-  let level: RiskLevel = "low";
-  if (score >= 66) {
+  if (score >= 65) {
     level = "high";
-  } else if (score >= 36) {
+  } else if (score >= 35) {
     level = "medium";
   }
 
-  if (reasons.length === 0) {
-    reasons.push("No major structural anomalies detected from IMEI + TAC signals.");
-  }
-
-  return { score, level, reasons };
-}
-
-function buildRecommendations(input: {
-  riskLevel: RiskLevel;
-  carrier: string;
-  tacMatched: boolean;
-}): string[] {
-  const tips: string[] = [];
-
-  if (!input.tacMatched) {
-    tips.push(
-      "Request a photo of the IMEI label in Settings and on the original box to catch mismatches."
-    );
-  }
-
-  if (input.carrier !== "Factory Unlocked") {
-    tips.push(
-      "Before payment, run an unlock eligibility check with the identified carrier and confirm no unpaid installments."
-    );
-  }
-
-  if (input.riskLevel !== "low") {
-    tips.push(
-      "Use a protected payment method and include an IMEI match clause in your bill of sale."
-    );
-  }
-
-  tips.push("Test activation with your target SIM or eSIM trial before finalizing the purchase.");
-  return tips;
-}
-
-export function validateImei(imei: string): { valid: boolean; normalized: string } {
-  const normalized = normalizeImei(imei);
   return {
-    valid: luhnIsValid(normalized),
-    normalized
+    score,
+    level,
+    signals,
   };
 }
 
-export async function lookupImei(imeiInput: string): Promise<ImeiLookupResult> {
-  const { normalized: imei, valid } = validateImei(imeiInput);
+export async function lookupImeiDetails(rawInput: string): Promise<ImeiLookupResult> {
+  const imei = sanitizeImei(rawInput);
+  const tac = imei.slice(0, 8);
+  const isValid = imei.length === 15 && luhnCheck(imei);
 
-  if (!valid) {
-    throw new Error("Please provide a valid 15-digit IMEI.");
+  const notes: string[] = [];
+
+  let providerData = await fetchHiCellTekData(imei);
+
+  if (!providerData) {
+    providerData = await fetchDeviceCheckData(imei);
   }
 
-  const tac = imei.slice(0, 8);
-  const tacResolution = await resolveTac(tac);
+  if (!providerData) {
+    providerData = tacFallback(tac);
+    notes.push(
+      "External IMEI providers were unavailable or not configured. Showing TAC-based intelligence with reduced certainty.",
+    );
+  }
 
-  const device = tacResolution.record
-    ? {
-        manufacturer: tacResolution.record.manufacturer || "Unknown",
-        model: tacResolution.record.model || "Unknown",
-        confidence: "high" as Confidence,
-        tacMatched: true
-      }
-    : {
-        manufacturer: "Unknown",
-        model: "Unknown model",
-        confidence: "low" as Confidence,
-        tacMatched: false
-      };
+  const brand = providerData.brand || "Unknown";
+  const model = providerData.model || "Unknown model";
+  const marketingName = providerData.marketingName || `${brand} ${model}`.trim();
 
-  const carrier = inferCarrier(device.manufacturer, device.model);
-  const simLockStatus = inferSimLockStatus(carrier.name, carrier.confidence);
+  const carrierInference = inferCarrier(providerData.carrier, brand, model);
+  const unlockPolicy = getUnlockPolicyForCarrier(carrierInference.name);
 
-  const unlockPolicy = CARRIER_POLICIES[carrier.name] ?? CARRIER_POLICIES.Unknown;
-
-  const fraudRisk = calculateFraudRisk({
+  const fraud = getFraudSignals({
     imei,
-    tacMatched: device.tacMatched,
-    carrierConfidence: carrier.confidence,
-    model: device.model
+    isValid,
+    source: providerData.source,
+    modelKnown: model !== "Unknown model",
+    blacklisted: providerData.blacklisted,
+    simLockStatus: providerData.simLockStatus,
+    carrierConfidence: carrierInference.confidence,
   });
 
-  const recommendations = buildRecommendations({
-    riskLevel: fraudRisk.level,
-    carrier: carrier.name,
-    tacMatched: device.tacMatched
-  });
+  if (providerData.source !== "local") {
+    notes.push("Result includes live data from an external IMEI database provider.");
+  }
+
+  if (providerData.source === "local" && !process.env.HICELLTEK_API_KEY && !process.env.DEVICECHECK_API_TOKEN) {
+    notes.push("Add HICELLTEK_API_KEY or DEVICECHECK_API_TOKEN for stronger carrier and lock-confidence data.");
+  }
 
   return {
     imei,
     tac,
-    checkedAt: new Date().toISOString(),
-    source: tacResolution.source,
-    device,
-    carrier,
-    simLockStatus,
+    lookedUpAt: new Date().toISOString(),
+    isValidImei: isValid,
+    device: {
+      brand,
+      model,
+      marketingName,
+      source: providerData.source,
+    },
+    carrier: {
+      name: carrierInference.name,
+      confidence: carrierInference.confidence,
+      simLockStatus: providerData.simLockStatus,
+      reason: carrierInference.reason,
+    },
     unlockPolicy,
-    fraudRisk,
-    recommendations
+    fraud,
+    notes,
   };
 }

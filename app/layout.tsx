@@ -1,75 +1,66 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
-import Script from "next/script";
+import { Space_Grotesk, Geist } from "next/font/google";
 
-import "./globals.css";
+import "@/app/globals.css";
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
-  variable: "--font-space-grotesk",
-  display: "swap"
-});
-
-const jetBrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-jetbrains-mono",
-  display: "swap"
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://imei-carrier-lookup.app"),
-  title: {
-    default: "IMEI Carrier Lookup | Carrier, Unlock Policy, and Scam Risk",
-    template: "%s | IMEI Carrier Lookup"
-  },
+  metadataBase: new URL("https://imeicarrierlookup.com"),
+  title: "IMEI Carrier Lookup | Carrier, SIM Lock, Unlock Policy, Scam Risk",
   description:
-    "Paste an IMEI and instantly get model identification, likely carrier, SIM lock status, unlock policy guidance, and a practical fraud risk score.",
+    "Paste an IMEI and instantly get model identity, probable carrier, SIM lock status, official unlock policy, and fraud risk score. One free lookup, then pay as you go.",
+  applicationName: "IMEI Carrier Lookup",
   keywords: [
-    "IMEI check",
+    "IMEI checker",
     "carrier lookup",
-    "SIM lock status",
-    "phone unlock policy",
-    "used phone fraud check"
+    "SIM lock check",
+    "unlock policy",
+    "used phone fraud check",
+    "phone reseller tool",
   ],
   openGraph: {
-    title: "IMEI Carrier Lookup",
+    type: "website",
+    url: "https://imeicarrierlookup.com",
+    title: "IMEI Carrier Lookup - Carrier + Unlock Policy + Scam Risk",
     description:
-      "Fast IMEI intelligence for used phone buyers and resellers. Model, carrier hints, unlock policy, and risk score in one report.",
-    url: "https://imei-carrier-lookup.app",
+      "A fast IMEI tool for resellers and buyers: model verification, carrier hinting, SIM lock posture, and fraud scoring.",
     siteName: "IMEI Carrier Lookup",
-    type: "website"
+    images: [
+      {
+        url: "/opengraph-image.png",
+        width: 1200,
+        height: 630,
+        alt: "IMEI Carrier Lookup",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "IMEI Carrier Lookup",
-    description:
-      "Paste an IMEI and get carrier, unlock policy, and scam risk in seconds."
+    description: "Run one free IMEI check. Get carrier, unlock policy, and fraud risk in seconds.",
+    images: ["/opengraph-image.png"],
   },
   robots: {
     index: true,
-    follow: true
-  }
+    follow: true,
+  },
 };
 
 export default function RootLayout({
-  children
+  children,
 }: Readonly<{
   children: React.ReactNode;
-}>): React.JSX.Element {
+}>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${spaceGrotesk.variable} ${jetBrainsMono.variable} antialiased`}
-        style={{
-          fontFamily: "var(--font-space-grotesk), ui-sans-serif, sans-serif"
-        }}
-      >
-        <Script
-          src="https://assets.lemonsqueezy.com/lemon.js"
-          strategy="afterInteractive"
-        />
-        {children}
-      </body>
+    <html lang="en" className={cn("dark", "font-sans", geist.variable)}>
+      <body className={spaceGrotesk.className}>{children}</body>
     </html>
   );
 }

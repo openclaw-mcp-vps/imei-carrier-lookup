@@ -1,98 +1,76 @@
 "use client";
 
-import { useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
+import { Loader2, Search } from "lucide-react";
 import toast from "react-hot-toast";
-import { Loader2 } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { ImeiLookupResult } from "@/lib/imei-service";
+import type { LookupApiResponse, LookupErrorResponse, LookupSuccessResponse } from "@/lib/types";
 
-type ImeiFormProps = {
-  onResult: (result: ImeiLookupResult) => void;
-  onPaywallRequired: (message: string) => void;
-};
+interface IMEIFormProps {
+  onSuccess: (data: LookupSuccessResponse) => void;
+  onPaywall: (error: LookupErrorResponse) => void;
+}
 
-export default function IMEIForm({ onResult, onPaywallRequired }: ImeiFormProps) {
+export function IMEIForm({ onSuccess, onPaywall }: IMEIFormProps) {
   const [imei, setImei] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  const normalized = useMemo(() => imei.replace(/\D/g, ""), [imei]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setIsLoading(true);
+
+    if (normalized.length !== 15) {
+      toast.error("Enter a 15-digit IMEI.");
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const response = await fetch("/api/lookup", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ imei })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imei: normalized }),
       });
 
-      const data = (await response.json()) as {
-        error?: string;
-        needsPayment?: boolean;
-        result?: ImeiLookupResult;
-      };
+      const payload = (await response.json()) as LookupApiResponse;
 
-      if (!response.ok) {
-        if (data.needsPayment) {
-          onPaywallRequired(data.error || "Payment required.");
-          toast.error("Free lookup already used. Unlock more checks to continue.");
-          return;
-        }
-
-        throw new Error(data.error || "Lookup failed.");
+      if (!payload.ok) {
+        onPaywall(payload);
+        toast.error(payload.error);
+        return;
       }
 
-      if (!data.result) {
-        throw new Error("Lookup returned no result.");
-      }
-
-      onResult(data.result);
-      toast.success("IMEI analyzed successfully.");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unexpected error.";
-      toast.error(message);
+      onSuccess(payload);
+      toast.success("Lookup complete.");
+    } catch {
+      toast.error("Lookup failed. Please try again.");
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
-      <label htmlFor="imei" className="text-sm font-medium">
-        Enter 15-digit IMEI
-      </label>
-      <div className="flex flex-col gap-3 sm:flex-row">
+    <form className="space-y-4" onSubmit={handleSubmit}>
+      <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
         <Input
-          id="imei"
-          name="imei"
           inputMode="numeric"
-          pattern="[0-9]{15}"
-          maxLength={15}
-          required
+          autoComplete="off"
+          placeholder="Paste 15-digit IMEI"
           value={imei}
-          onChange={(event) => {
-            const digits = event.target.value.replace(/\D/g, "").slice(0, 15);
-            setImei(digits);
-          }}
-          placeholder="Example: 356938035643809"
-          className="sm:flex-1"
+          onChange={(event) => setImei(event.target.value.replace(/[^0-9]/g, ""))}
+          aria-label="IMEI"
         />
-        <Button type="submit" className="sm:w-44" disabled={isLoading}>
-          {isLoading ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Checking...
-            </>
-          ) : (
-            "Run Lookup"
-          )}
+        <Button type="submit" disabled={loading} className="min-w-36">
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+          {loading ? "Checking" : "Run Lookup"}
         </Button>
       </div>
-      <p className="text-xs text-[var(--muted)]">
-        First lookup is free. After that: $1 per lookup or $15/month unlimited.
+      <p className="text-xs leading-relaxed text-zinc-400">
+        Your first lookup is free on this browser. Paid lookups unlock continued checks using cookie-based access.
       </p>
     </form>
   );

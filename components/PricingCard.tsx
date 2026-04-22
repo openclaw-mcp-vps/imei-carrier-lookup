@@ -1,54 +1,51 @@
 import { Check } from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 
-type PricingCardProps = {
-  title: string;
+interface PricingCardProps {
+  name: string;
   price: string;
-  period: string;
-  summary: string;
+  cadence: string;
+  description: string;
   features: string[];
-  ctaLabel: string;
-  onClick: () => void;
-  highlighted?: boolean;
-  disabled?: boolean;
-};
+  featured?: boolean;
+}
 
-export default function PricingCard({
-  title,
-  price,
-  period,
-  summary,
-  features,
-  ctaLabel,
-  onClick,
-  highlighted,
-  disabled
-}: PricingCardProps) {
+export function PricingCard({ name, price, cadence, description, features, featured }: PricingCardProps) {
   return (
-    <Card className={cn("h-full", highlighted && "border-[var(--accent)] shadow-[0_0_0_1px_rgba(88,166,255,0.4)]")}>
+    <Card className={featured ? "border-cyan-500/60 ring-1 ring-cyan-500/30" : undefined}>
       <CardHeader>
-        <CardTitle className="text-lg">{title}</CardTitle>
-        <CardDescription>{summary}</CardDescription>
+        <div className="flex items-center justify-between">
+          <CardTitle>{name}</CardTitle>
+          {featured ? <Badge variant="success">Most Popular</Badge> : null}
+        </div>
+        <div className="mt-4 flex items-end gap-2">
+          <span className="text-4xl font-bold tracking-tight">{price}</span>
+          <span className="pb-1 text-sm text-zinc-400">{cadence}</span>
+        </div>
+        <p className="text-sm text-zinc-400">{description}</p>
       </CardHeader>
       <CardContent>
-        <p className="text-3xl font-semibold tracking-tight">
-          {price}
-          <span className="ml-1 text-sm font-normal text-[var(--muted)]">{period}</span>
-        </p>
-        <ul className="mt-4 space-y-2 text-sm text-[var(--muted)]">
+        <ul className="space-y-3 text-sm text-zinc-300">
           {features.map((feature) => (
             <li key={feature} className="flex items-start gap-2">
-              <Check className="mt-0.5 h-4 w-4 text-[var(--good)]" />
+              <Check className="mt-0.5 h-4 w-4 text-cyan-300" />
               <span>{feature}</span>
             </li>
           ))}
         </ul>
       </CardContent>
       <CardFooter>
-        <Button className="w-full" onClick={onClick} disabled={disabled}>
-          {disabled ? "Enabled" : ctaLabel}
+        <Button asChild className="w-full">
+          <a
+            href={process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Buy with Stripe
+          </a>
         </Button>
       </CardFooter>
     </Card>
